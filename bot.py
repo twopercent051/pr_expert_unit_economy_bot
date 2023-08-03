@@ -24,7 +24,7 @@ async def main():
     scheduler_jobs()
     rds.redis_start()
     dp.include_routers(
-        *admin_router,
+        # *admin_router,
         *user_router,
         echo_router
     )
