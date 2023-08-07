@@ -8,7 +8,7 @@ class InlineKeyboard:
         self.in_fact = InlineKeyboardButton(text="По факту", callback_data="in_fact")
         self.info = InlineKeyboardButton(text="Справка", callback_data="info")
         self.restart = InlineKeyboardButton(text="Начать сначала", callback_data="restart")
-        self.feedback = InlineKeyboardButton(text="Написать нам", url="https://t.me/lentachold")
+        self.feedback = InlineKeyboardButton(text="Написать нам", url="https://promoexpert.pro/")
 
     def main_menu_kb(self):
         keyboard = [
