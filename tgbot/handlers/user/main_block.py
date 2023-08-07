@@ -59,25 +59,28 @@ def text_render(type_text: Literal["forecast", "in_fact"], step: str) -> str:
 
 
 def total_render_text(data: dict, type_text: Literal["forecast", "in_fact"]):
-    budget = int(data["budget"])
-    impressions_counter = int(data["impressions_counter"])
-    cpm = round(budget / (impressions_counter / 1000), 2)
-    ctr = int(data["ctr"])
-    clicks = int(impressions_counter * ctr / 100)
-    cpc = round(budget / clicks, 2)
-    application_conversion = int(data["application_conversion"])
-    application_counter = int(clicks * application_conversion / 100)
-    cpa = round(budget / application_counter, 2)
-    sell_conversion = int(data["sell_conversion"])
-    sell_counter = int(clicks * sell_conversion / 1000)
-    cps = round(budget / sell_counter, 2)
-    aov = int(data["aov"])
-    sales_revenue = int(sell_counter * aov)
-    sae = round(budget * 100 / sales_revenue, 2)
-    roim = int((sales_revenue - budget) * 100 / budget)
-    text_dict = dict(forecast="Примерный", in_fact="Фактический")
+    try:
+        budget = int(data["budget"])
+        impressions_counter = int(data["impressions_counter"])
+        cpm = round(budget / (impressions_counter / 1000), 2)
+        ctr = int(data["ctr"])
+        clicks = int(impressions_counter * ctr / 100)
+        cpc = round(budget / clicks, 2)
+        application_conversion = int(data["application_conversion"])
+        application_counter = int(clicks * application_conversion / 100)
+        cpa = round(budget / application_counter, 2)
+        sell_conversion = int(data["sell_conversion"])
+        sell_counter = int(clicks * sell_conversion / 1000)
+        cps = round(budget / sell_counter, 2)
+        aov = int(data["aov"])
+        sales_revenue = int(sell_counter * aov)
+        sae = round(budget * 100 / sales_revenue, 2)
+        roim = int((sales_revenue - budget) * 100 / budget)
+        text_dict = dict(forecast="Примерный", in_fact="Фактический")
+    except (ZeroDivisionError, Exception):
+        return "Значения, которые вы ввели слишком малы. Пожалуйста, начните сначала"
     text = [
-        f"{text_dict[type_text]} бюджет <b>{'{0:,}'.format(budget).replace(',', ' ')}</b>",
+        f"{text_dict[type_text]} бюджет <b>{'{0:,}'.format(budget).replace(',', ' ')} ₽</b>",
         f"Число показов объявлений в кампании <b>{'{0:,}'.format(impressions_counter).replace(',', ' ')}</b>\n",
         f"Стоимость тысячи показов, CPM <b>{'{0:,}'.format(cpm).replace(',', ' ')} ₽</b>",
         f"Показатель кликабельности, CTR <b>{'{0:,}'.format(ctr).replace(',', ' ')} %</b>",
