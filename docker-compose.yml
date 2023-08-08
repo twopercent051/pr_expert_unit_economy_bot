@@ -1,5 +1,8 @@
 version: '3.8'
 
+volumes:
+  pg_data: {}
+
 services:
   bot:
     image: "${BOT_IMAGE_NAME:-tg_bot-image}"
@@ -7,11 +10,27 @@ services:
     stop_signal: SIGINT
     build:
       context: .
-    network_mode: "host"
-    working_dir: "/usr/src/app/${BOT_NAME:-tg_bot}"
     volumes:
-    - .:/usr/src/app/${BOT_NAME:-tg_bot}
-    command: python3 -m bot
+    - .:/usr/src/app/inside_gpt_bot
+    command: sh -c "alembic upgrade head && python3 -m bot"
     restart: always
     env_file:
       - ".env"
+    depends_on:
+      - psql_db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
+
+  psql_db:
+    image: postgres:15
+    container_name: "${DB_CONTAINER_NAME:-psql-container}"
+    restart: always
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    env_file:
+      - .env

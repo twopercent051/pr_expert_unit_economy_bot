@@ -4,61 +4,49 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
+from sqlalchemy.exc import IntegrityError
 
 from create_bot import bot
 from tgbot.handlers.user.inline import InlineKeyboard
 from tgbot.misc.states import UserFSM
+from tgbot.models.sql_connector import UsersDAO, TextsDAO
 
 router = Router()
 inline = InlineKeyboard()
 
 
-async def start_render(user_id: str | int):
-    text = "С помощью этого бота вы можете спрогнозировать рекламный бюджет или, имея фактические показатели, " \
-           "увидеть экономический результат рекламных кампаний."
+async def text_render(title: str) -> str:
+    text = await TextsDAO.get_one_or_none(title=title)
+    text = text["text"] if text else "ТЕКСТ НЕ ЗАДАН"
+    return text
+
+
+async def start_render(user_id: str | int, username: str):
+    try:
+        username = f"@{username}" if username else "---"
+        await UsersDAO.create(user_id=str(user_id), username=username)
+    except IntegrityError:
+        pass
+    text = await text_render(title="start")
     kb = inline.main_menu_kb()
     await bot.send_message(chat_id=user_id, text=text, reply_markup=kb)
 
 
 @router.message(Command("start"))
 async def main_block(message: Message, state: FSMContext):
-    await start_render(user_id=message.from_user.id)
+    await start_render(user_id=message.from_user.id, username=message.from_user.username)
     await state.set_state(UserFSM.home)
 
 
 @router.callback_query(F.data == "restart")
+@router.callback_query(F.data == "as_client")
 async def main_block(callback: CallbackQuery, state: FSMContext):
-    await start_render(user_id=callback.from_user.id)
+    await start_render(user_id=callback.from_user.id, username=callback.from_user.username)
     await state.set_state(UserFSM.home)
     await bot.answer_callback_query(callback.id)
 
 
-def text_render(type_text: Literal["forecast", "in_fact"], step: str) -> str:
-    forecast = dict(budget="Введите <i>примерный</i> рекламный бюджет",
-                    impressions_counter="Введите число показов объявлений в кампаниях",
-                    ctr="Введите CTR (показатель кликабельности — отношение кликов к показам)",
-                    application_conversion="Введите показатель конверсии в заявку (%, сколько посетителей сайта с "
-                                           "рекламы оставили заявку). <i>Можно взять примерные данные с вашего сайта "
-                                           "по другим источникам (SEO, соцсети и т.д.)</i>",
-                    sell_conversion="Введите показатель конверсии в продажу (%, сколько посетителей оставили заявку, "
-                                    "совершили продажу) <i>Можно взять примерные данные в вашем бизнесе, которые были "
-                                    "без участия интернет-маркетинга</i>",
-                    aov="Введите средний чек с продажи (₽)")
-
-    in_fact = dict(budget="Введите <i>фактический</i> рекламный бюджет",
-                   impressions_counter="Введите число показов объявлений в кампаниях",
-                   ctr="Введите CTR (показатель кликабельности — отношение кликов к показам)",
-                   application_conversion="Введите показатель конверсии в заявку (%, сколько посетителей сайта с "
-                                          "рекламы оставили заявку)",
-                   sell_conversion="Введите показатель конверсии в продажу (%, сколько посетителей оставили заявку, "
-                                   "совершили продажу)",
-                   aov="Введите средний чек с продажи (₽)")
-
-    result = dict(forecast=forecast, in_fact=in_fact)
-    return result[type_text][step]
-
-
-def total_render_text(data: dict, type_text: Literal["forecast", "in_fact"]):
+async def total_render_text(data: dict, type_text: Literal["forecast", "in_fact"]):
     try:
         budget = int(data["budget"])
         impressions_counter = int(data["impressions_counter"])
@@ -78,7 +66,8 @@ def total_render_text(data: dict, type_text: Literal["forecast", "in_fact"]):
         roim = int((sales_revenue - budget) * 100 / budget)
         text_dict = dict(forecast="Примерный", in_fact="Фактический")
     except (ZeroDivisionError, Exception):
-        return "Значения, которые вы ввели слишком малы. Пожалуйста, начните сначала"
+        text = await text_render(title="too_low")
+        return text
     text = [
         f"{text_dict[type_text]} бюджет <b>{'{0:,}'.format(budget).replace(',', ' ')} ₽</b>",
         f"Число показов объявлений в кампании <b>{'{0:,}'.format(impressions_counter).replace(',', ' ')}</b>\n",
@@ -98,17 +87,17 @@ def total_render_text(data: dict, type_text: Literal["forecast", "in_fact"]):
         f"Возврат маркетинговых инвестиций, ROIм <b>{'{0:,}'.format(roim).replace(',', ' ')} %</b>\n",
     ]
     if roim <= 100:
-        text.append("У вас низкий показатель возврата инвестиций. Напишите нам, расскажем, как его улучшить.")
+        added_text = await text_render(title="low_roim")
     else:
-        text.append("Если какой-то из показателей вызывает у вас затруднения — обратитесь к нам. Поможем разобраться "
-                    "и дадим бесплатную консультацию по юнит-экономике интернет-рекламы.")
+        added_text = await text_render(title="normal_roim")
+    text.append(added_text)
     return "\n".join(text)
 
 
 @router.callback_query(F.data == "forecast")
 @router.callback_query(F.data == "in_fact")
 async def main_block(callback: CallbackQuery, state: FSMContext):
-    text = text_render(type_text=callback.data, step="budget")
+    text = await text_render(title=f"requests:{callback.data}:budget")
     await state.set_state(UserFSM.impressions_counter)
     await state.update_data(type_text=callback.data, result_data={})
     await callback.message.answer(text)
@@ -122,7 +111,8 @@ async def main_block(callback: CallbackQuery, state: FSMContext):
 @router.message(F.text, UserFSM.aov)
 async def main_block(message: Message, state: FSMContext):
     if not message.text.isdigit():
-        await message.answer("⚠️ Введите пожалуйста число")
+        text = await text_render(title="not_number")
+        await message.answer(text)
         return
     current_state = await state.get_state()
     state_data = await state.get_data()
@@ -144,14 +134,15 @@ async def main_block(message: Message, state: FSMContext):
     if current_state == "aov":
         await state.set_state(UserFSM.result)
         result_data["sell_conversion"] = float(message.text.replace(",", "."))
-    text = text_render(type_text=type_text, step=current_state)
+    text = await text_render(title=f"requests:{type_text}:{current_state}")
     await message.answer(text)
 
 
 @router.message(F.text, UserFSM.result)
 async def main_block(message: Message, state: FSMContext):
     if not message.text.isdigit():
-        await message.answer("⚠️ Введите пожалуйста число")
+        text = await text_render(title="not_number")
+        await message.answer(text)
         return
     state_data = await state.get_data()
     type_text = state_data["type_text"]
@@ -164,60 +155,7 @@ async def main_block(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "info")
 async def main_block(callback: CallbackQuery):
-    text = [
-        "<b>Раздел справка:</b>\n",
-        "<b>Ниже вы найдете определения показателей юнит-экономики и информацию, где их можно найти. Указывайте "
-        "данные за одинаковый период. Например, за 1 календарный месяц.</b>",
-        "<b>Если у вас есть подрядчик, маркетолог или специалист по рекламе, то данные вы можете запросить у "
-        "них.</b>\n",
-        "1. <b>Бюджет</b> — сумма денег, потраченная на рекламу. Вы можете указывать как общий бюджет по всем "
-        "инструментам, так и вести расчет по конкретному инструменту. Например, рассчитать показатели с инструментов "
-        "«Реклама на поиске», «Реклама в сетях», «Медийная реклама» или только по одному из них.",
-        "Если ведете рекламу через подрядчика, нужно учитывать и цену работы исполнителей, и прямой бюджет рекламной "
-        "площадки с НДС",
-        "<b>Где взять:</b> уточнить у вашего специалиста или посмотреть в рекламном кабинете. Примерный бюджет "
-        "можете рассчитать в "
-        "<a href='https://direct.yandex.ru/registered/main.pl?cmd=advancedForecast'>прогнозаторе</a> Яндекса "
-        "или взять планируемый. \n",
-        "2. <b>Число показов объявлений в кампании</b> — число, показывающее, сколько раз ваше объявление было "
-        "показано пользователям. Аналогично с «Бюджетом», можно брать показатель по всем инструментам или "
-        "только по одному.",
-        "<b>Где взять:</b> уточнить у вашего специалиста или посмотреть в рекламном кабинете. Если нужны примерные "
-        "данные, можно взять в "
-        "<a href='https://direct.yandex.ru/registered/main.pl?cmd=advancedForecast'>прогнозаторе</a> Яндекса.\n",
-        "3. <b>CPM (Cost Per Mille)</b> — стоимость тысячи показов, т.е. показа объявления одной тысяче посетителей.\n",
-        "4. <b>CTR (Click-Through Rate)</b> — процент-показатель кликабельности, т.е. отношение кликов по вашим "
-        "объявлениям к их показам. По этому показателю можно оценивать привлекательность, «продающесть» рекламного "
-        "объявления.",
-        "<b>Где взять:</b> уточнить у вашего специалиста или посмотреть в кабинете рекламной системы. Если нужны "
-        "примерные данные, можно взять в "
-        "<a href='https://direct.yandex.ru/registered/main.pl?cmd=advancedForecast'>прогнозаторе</a> Яндекса.\n",
-        "5. <b>Клики (Посещаемость)</b> — число, показывающее, сколько раз пользователи кликнули по вашему "
-        "объявлению и перешли на сайт.\n",
-        "6. <b>CPC (Cost Per Click)</b> — стоимость клика, т.е. рекламный бюджет делённый на количество кликов. "
-        "Во сколько рублей вам обходится переход на сайт.\n",
-        "7. <b>Конверсия в заявку</b> — процент переходов (писем, звонков) на сайт с рекламы, которые "
-        "сконвертировались в заявку. То есть сколько людей, которые перешли по рекламе на сайт, оставили заявку. "
-        "По этому показателю можно оценивать эффективность сайта или посадочной страницы.",
-        "<b>Где взять:</b> уточнить у вашего специалиста или посмотреть в системе аналитики Яндекс Метрика или "
-        "Google Analytics.\n",
-        "8. <b>Число заявок</b> — общее количество заявок, которые вы получили благодаря рекламе.\n",
-        "9. <b>CPA (Cost Per Action)</b> — стоимость заявки, т.е. сколько для вас стоит получение одной заявки "
-        "(письма, звонка) с рекламы.\n",
-        "10. <b>Конверсия в продажу</b> — процент, указывающий сколько оставленных заявок (или заполненных корзин) "
-        "закончились продажей. По этому показателю можно оценивать эффективность отдела продаж.",
-        "<b>Где взять:</b> уточнить у вашего специалиста, в отделе продаж или в CRM-системе компании.\n",
-        "11. <b>Число продаж</b> — общее количество состоявшихся продаж с рекламы.\n",
-        "12. <b>CPS (Cost Per Sale)</b> — стоимость продажи, во сколько рублей вам обходится одна продажа.\n",
-        "13. <b>AOV (Average Order Value)</b> — средний чек с продажи, т.е. средняя стоимость товаров/услуг, "
-        "которые вы продаете с использованием рекламы, на одного пользователя.",
-        "<b>Где взять:</b> уточнить у вашего специалиста, в отделе продаж или в CRM-системе компании.\n",
-        "14. <b>Выручка с продаж</b> — произведение среднего чека с продажи на число продаж с рекламы.\n",
-        "15. <b>ДРР</b> — доля рекламных расходов, соотношение рекламного бюджета к полученной выручке с этой "
-        "рекламы.\n",
-        "16. <b>ROIм (Return Of Investments)</b> — возврат маркетинговых инвестиций, т.е. сколько процентов вложенных "
-        "в рекламу денег вам вернулось."
-    ]
+    text = await text_render(title="info")
     kb = inline.info_kb()
     await callback.message.answer("\n".join(text), reply_markup=kb)
     await bot.answer_callback_query(callback.id)

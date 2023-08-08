@@ -9,3 +9,8 @@ class UserFSM(StatesGroup):
     sell_conversion = State()
     aov = State()
     result = State()
+
+
+class AdminFSM(StatesGroup):
+    home = State()
+    text = State()

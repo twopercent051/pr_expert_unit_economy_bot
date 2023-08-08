@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 log_level = logging.INFO
 bl.basic_colorized_config(level=log_level)
 
+DATABASE_URL = f"postgresql+asyncpg://{config.db.user}:{config.db.password}@{config.db.host}:{config.db.port}/{config.db.database}"
+
 
 def register_global_middlewares(dp: Dispatcher, config):
     dp.message.outer_middleware(ConfigMiddleware(config))
