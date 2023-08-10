@@ -157,5 +157,5 @@ async def main_block(message: Message, state: FSMContext):
 async def main_block(callback: CallbackQuery):
     text = await text_render(title="info")
     kb = inline.info_kb()
-    await callback.message.answer("\n".join(text), reply_markup=kb)
+    await callback.message.answer(text, reply_markup=kb)
     await bot.answer_callback_query(callback.id)
