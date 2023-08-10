@@ -148,7 +148,7 @@ async def main_block(message: Message, state: FSMContext):
     type_text = state_data["type_text"]
     result_data = state_data["result_data"]
     result_data["aov"] = float(message.text.replace(",", "."))
-    text = total_render_text(data=result_data, type_text=type_text)
+    text = await total_render_text(data=result_data, type_text=type_text)
     kb = inline.finish_text_kb()
     await message.answer(text, reply_markup=kb)
 
